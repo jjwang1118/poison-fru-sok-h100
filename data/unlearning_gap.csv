@@ -1,0 +1,2 @@
+anchor,method,seed,forget_frac,attack_saturated,hr_clean,hr_poison,hr_retain,hr_unlearned,ndcg_clean,ndcg_poison,ndcg_retain,ndcg_unlearned
+CFRU-fedAttack-ML1M-NCF,CFRU,0,1.0,0,0.7758530661809347,0.7819307832422583,0.7764389799635704,0.7793776563448688,0.39496456273664293,0.39652838572271565,0.3957551202641662,0.39610173086723544

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.Zone.Identifier
+*:Zone.Identifier
+*.egg-info/
+.eggs/
+dist/
+build/
+*.log
+.DS_Store
