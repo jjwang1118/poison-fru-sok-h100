@@ -1,0 +1,232 @@
+init fedtask...done
+target_item = 2248 | atk_method = none
+init clients...MAX POS IDX: 724
+MAX POS IDX: 954
+MAX POS IDX: 693
+MAX POS IDX: 966
+MAX POS IDX: 564
+MAX POS IDX: 1143
+MAX POS IDX: 1343
+MAX POS IDX: 1520
+MAX POS IDX: 730
+MAX POS IDX: 799
+MAX POS IDX: 1003
+MAX POS IDX: 741
+MAX POS IDX: 781
+MAX POS IDX: 710
+MAX POS IDX: 660
+MAX POS IDX: 1285
+MAX POS IDX: 1210
+MAX POS IDX: 1015
+MAX POS IDX: 1301
+MAX POS IDX: 773
+MAX POS IDX: 665
+MAX POS IDX: 1008
+MAX POS IDX: 507
+MAX POS IDX: 824
+MAX POS IDX: 884
+MAX POS IDX: 999
+MAX POS IDX: 1322
+MAX POS IDX: 607
+MAX POS IDX: 821
+MAX POS IDX: 981
+MAX POS IDX: 553
+MAX POS IDX: 1215
+MAX POS IDX: 1049
+MAX POS IDX: 1742
+MAX POS IDX: 1077
+MAX POS IDX: 1257
+MAX POS IDX: 1270
+MAX POS IDX: 1221
+MAX POS IDX: 525
+MAX POS IDX: 864
+MAX POS IDX: 818
+MAX POS IDX: 623
+MAX POS IDX: 1849
+MAX POS IDX: 1151
+MAX POS IDX: 804
+MAX POS IDX: 843
+MAX POS IDX: 1168
+MAX POS IDX: 400
+MAX POS IDX: 1175
+MAX POS IDX: 841
+MAX POS IDX: 908
+MAX POS IDX: 794
+MAX POS IDX: 922
+MAX POS IDX: 549
+MAX POS IDX: 670
+MAX POS IDX: 1215
+MAX POS IDX: 836
+MAX POS IDX: 887
+MAX POS IDX: 913
+MAX POS IDX: 788
+MAX POS IDX: 963
+MAX POS IDX: 892
+MAX POS IDX: 609
+MAX POS IDX: 793
+MAX POS IDX: 1225
+MAX POS IDX: 1239
+MAX POS IDX: 821
+MAX POS IDX: 466
+MAX POS IDX: 1114
+MAX POS IDX: 914
+MAX POS IDX: 719
+MAX POS IDX: 902
+MAX POS IDX: 1259
+MAX POS IDX: 639
+MAX POS IDX: 857
+MAX POS IDX: 2313
+MAX POS IDX: 836
+MAX POS IDX: 1594
+MAX POS IDX: 838
+MAX POS IDX: 881
+MAX POS IDX: 1018
+MAX POS IDX: 824
+MAX POS IDX: 1037
+MAX POS IDX: 684
+MAX POS IDX: 1219
+MAX POS IDX: 728
+MAX POS IDX: 1017
+MAX POS IDX: 683
+MAX POS IDX: 527
+MAX POS IDX: 1242
+MAX POS IDX: 677
+MAX POS IDX: 970
+MAX POS IDX: 1517
+MAX POS IDX: 851
+MAX POS IDX: 605
+MAX POS IDX: 783
+MAX POS IDX: 458
+MAX POS IDX: 742
+MAX POS IDX: 1157
+MAX POS IDX: 835
+init server...fedtasksave/movielens1m_cnum100_dist0_skew0_seed0/CFRU_NCF_Mu8_R40_P1.00_alpha0.5_seed0_none/record
+done
+--------------Round 0--------------
+48075
+55990
+40990
+56610
+49645
+56305
+52035
+66080
+57465
+47115
+53145
+48130
+45950
+49200
+50970
+50355
+62005
+63095
+60800
+37145
+41585
+54115
+37400
+48390
+54835
+57275
+54420
+38120
+49300
+41575
+40110
+51300
+52420
+50925
+44950
+47215
+48175
+54130
+46805
+43410
+56880
+41720
+58230
+51075
+44885
+46430
+58155
+38825
+51090
+50460
+49370
+42415
+41595
+37300
+40055
+40980
+47400
+54785
+42965
+44010
+43410
+50735
+42175
+68510
+49285
+56555
+51535
+39720
+53800
+48860
+47895
+46330
+51355
+52745
+48945
+55790
+68485
+66810
+44415
+45910
+59150
+52470
+60720
+48265
+54520
+59030
+50000
+47110
+37500
+58340
+45215
+56555
+49965
+45265
+38975
+54265
+43355
+49960
+39370
+41365
+Traceback (most recent call last):
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/main.py", line 46, in <module>
+    main()
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/main.py", line 42, in main
+    server.run()
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/algorithm/CFRU.py", line 94, in run
+    self.iterate(round)
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/algorithm/CFRU.py", line 117, in iterate
+    self.process_grad(important_weights)
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/algorithm/CFRU.py", line 182, in process_grad
+    grads_this_round[str(cid)] = (self.model - models[idx].to(self.model.device)).to('cpu')
+  File "/home/u4996812/miniconda3/envs/poison-fru-sok/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1928, in __getattr__
+    raise AttributeError(
+AttributeError: 'Model' object has no attribute 'device'
+  $ /home/u4996812/miniconda3/envs/poison-fru-sok/bin/python3 main.py --task movielens1m_cnum100_dist0_skew0_seed0 --model NCF --algorithm CFRU --atk_method none --mode unlearn --forget_frac 0.0 --num_rounds 40 --topN 20 --S1 8 --proportion 1.0 --alpha 0.5 --seed 0 --num_epochs 5 --batch_size 512 --num_ng 4 --learning_rate 0.01 --server_gpu_id 0 --target_item -1
+Traceback (most recent call last):
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/../../scripts/run_unlearning_gap.py", line 188, in <module>
+    raise SystemExit(main())
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/../../scripts/run_unlearning_gap.py", line 154, in main
+    rec = run(seed, "none", 0.0, "unlearn")
+  File "/home/u4996812/poison-fru-sok-h100/external/CFRU/../../scripts/run_unlearning_gap.py", line 88, in run
+    subprocess.run(cmd, cwd=REPO, check=True)
+  File "/home/u4996812/miniconda3/envs/poison-fru-sok/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/u4996812/miniconda3/envs/poison-fru-sok/bin/python3', 'main.py', '--task', 'movielens1m_cnum100_dist0_skew0_seed0', '--model', 'NCF', '--algorithm', 'CFRU', '--atk_method', 'none', '--mode', 'unlearn', '--forget_frac', '0.0', '--num_rounds', '40', '--topN', '20', '--S1', '8', '--proportion', '1.0', '--alpha', '0.5', '--seed', '0', '--num_epochs', '5', '--batch_size', '512', '--num_ng', '4', '--learning_rate', '0.01', '--server_gpu_id', '0', '--target_item', '-1']' returned non-zero exit status 1.
+=== smoke result (look for ER poison >> ER clean) ===
+anchor,method,seed,forget_frac,attack_saturated,target_item,hr_clean,hr_poison,hr_retain,hr_unlearned,ndcg_clean,ndcg_poison,ndcg_retain,ndcg_unlearned,er_clean,er_poison,er_retain,er_unlearned

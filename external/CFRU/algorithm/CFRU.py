@@ -178,7 +178,7 @@ class Server():
 		grads_this_round = {}
 		for idx in range(len(self.selected_clients)):
 			cid = self.selected_clients[idx]
-			grads_this_round[str(cid)] = (self.model - models[idx]).to('cpu') 
+			grads_this_round[str(cid)] = (self.model - models[idx].to(self.model.get_device())).to('cpu')
 
 		self.grads_all_round.append(grads_this_round)
 

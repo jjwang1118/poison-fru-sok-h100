@@ -21,7 +21,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # ---------------------------------------------------------------------------
 export SEEDS="0"               # one seed
 export FORGET_FRACS="1.0"      # full forget only (1 fraction)
-export NUM_ROUNDS="20"         # quick peek; set "40" to match the full run exactly
+export NUM_ROUNDS="40"         # quick peek; set "40" to match the full run exactly
 export BATCH_SIZE="512"        # big batch -> better GPU throughput
 export ATTACK="targetPromo"    # targeted target-item promotion (ER@K axis)
 export OUTCSV="$HOME/poison-fru-sok-h100/data/smoke_targetPromo.csv"   # separate from the full-run CSV
