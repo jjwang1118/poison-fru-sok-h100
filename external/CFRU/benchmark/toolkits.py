@@ -501,6 +501,28 @@ class ClassifyCalculator(BasicTaskCalculator):
 				NDCG.append(ndcg(gt_item, recommends))
 		return np.mean(HR), np.mean(NDCG)
 
+	@torch.no_grad()
+	def test_target_exposure(self, model, test_loader, target_item, top_k, users_test=None):
+		# Exposure Rate ER@K of the target item: fraction of (test) users for whom the target
+		# item appears in the top-K of their candidate pool (the user's pool plus the target item).
+		model.eval()
+		exposed = []
+		for user, item_i, item_j in test_loader:
+			if users_test is not None and user[0].item() not in users_test:
+				continue
+			items = item_i
+			users = user
+			if target_item not in item_i.tolist():
+				items = torch.cat([item_i, item_i.new_tensor([target_item])])
+				users = torch.cat([user, user.new_tensor([user[0].item()])])
+			users = users.to(self.device).long()
+			items = items.to(self.device).long()
+			scores = model.get_score([users, items])
+			_, idx = torch.topk(scores, top_k)
+			top_items = torch.take(items, idx).cpu().numpy().tolist()
+			exposed.append(1 if target_item in top_items else 0)
+		return float(np.mean(exposed)) if exposed else 0.0
+
 	def data_to_device(self, data, device=None):
 		if device is None:
 			return data[0].to(self.device), data[1].to(self.device), data[2].to(self.device)
@@ -994,6 +1016,37 @@ class NCFData(Dataset):
 		self.features_fill = ft_pos + self.features_ng
 		self.labels_fill = labels_ps + labels_ng
 		self.len_data = len(self.labels_fill)
+		return list(set(all_neg_item))
+
+	def ng_sample_target(self, target_item, malicious_users):
+		# TARGETED promotion: normal pos/neg for everyone, PLUS inject (malicious_user, target_item)
+		# as positives so the shared embedding of target_item is pushed up globally.
+		assert self.is_training, 'no need to sampling when testing'
+		all_neg_item = []
+		self.features_ng = []
+		inject_pos = []
+		mal = set(malicious_users)
+		for x in self.features:
+			u = x[0]
+			for t in range(self.num_ng):
+				j = np.random.randint(self.num_item)
+				while j in self.train_mat[str(u)]:
+					j = np.random.randint(self.num_item)
+				self.features_ng.append([u, j])
+				all_neg_item.append(j)
+			if u in mal:
+				for _ in range(self.num_ng):
+					inject_pos.append([u, target_item])
+		pos = self.features + inject_pos
+		labels_ps = [1 for _ in range(len(pos))]
+		labels_ng = [0 for _ in range(len(self.features_ng))]
+		self.features_fill = pos + self.features_ng
+		self.labels_fill = labels_ps + labels_ng
+		self.len_data = len(self.labels_fill)
+		if os.environ.get('ATK_DEBUG'):
+			# How many (user, target_item) positives were actually injected this call?
+			print("[ATK] ng_sample_target target={} n_malicious={} inject_pos={} base_features={}".format(
+				target_item, len(mal), len(inject_pos), len(self.features)), flush=True)
 		return list(set(all_neg_item))
 
 	def __len__(self):

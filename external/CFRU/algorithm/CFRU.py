@@ -150,6 +150,8 @@ class Server():
 				save_logs = {
 					"selected_clients": self.selected_clients,
 					"accuracy_retain": self.test_on_clients(temp_model),
+					"er_retain": self.test_target_exposure(temp_model),
+					"target_item": self.option['target_item'],
 				}
 			else:
 				clean_model = temp_model if self.unlearn_term is None else (temp_model + self.unlearn_term)
@@ -157,9 +159,22 @@ class Server():
 					"selected_clients": self.selected_clients,
 					"accuracy": self.test_on_clients(temp_model),
 					"accuracy_unlearn": self.test_on_clients(clean_model),
+					"er": self.test_target_exposure(temp_model),
+					"er_unlearn": self.test_target_exposure(clean_model),
+					"target_item": self.option['target_item'],
 					"unlearn_time": self.unlearn_time,
 				}
 		
+		if os.environ.get('ATK_DEBUG'):
+			# Surface target-item exposure per saved round so a short verify run
+			# shows whether the attack moves ER at all.
+			if self.option['mode'] == 'retrain':
+				print("[ATK] round={} mode=retrain er_retain={:.4f}".format(
+					round_num, save_logs.get('er_retain', float('nan'))), flush=True)
+			else:
+				print("[ATK] round={} mode={} er(poison)={:.4f} er_unlearn={:.4f} target={}".format(
+					round_num, self.option['mode'], save_logs.get('er', float('nan')),
+					save_logs.get('er_unlearn', float('nan')), self.option['target_item']), flush=True)
 		pickle.dump(save_logs,
 					open(os.path.join(self.path_save, "history" + str(round_num) + ".pkl"), 'wb'),
 					pickle.HIGHEST_PROTOCOL)
@@ -173,9 +188,7 @@ class Server():
 		grads_this_round = {}
 		for idx in range(len(self.selected_clients)):
 			cid = self.selected_clients[idx]
-			# grads_this_round[str(cid)] = (self.model - models[idx]).to('cpu')
-			grads_this_round[str(cid)] = (self.model - models[idx].to(self.model.get_device())).to('cpu')
-
+			grads_this_round[str(cid)] = (self.model - models[idx].to(self.model.get_device())).to('cpu') 
 
 		self.grads_all_round.append(grads_this_round)
 
@@ -409,6 +422,15 @@ class Server():
 		else:
 			return -1
 
+	def test_target_exposure(self, model=None):
+		"""Global ER@K (exposure rate) of the target item over the test users."""
+		if model is None: model = self.model
+		if not self.test_data:
+			return -1.0
+		model.eval()
+		data_loader = self.calculator.get_data_loader(self.test_data, batch_size=self.option['test_num_ng']+1, shuffle=False)
+		return self.calculator.test_target_exposure(model, data_loader, self.option['target_item'], self.topN)
+
 class Client():
 	def __init__(self, option, name='', model=None, train_data=None, users_set=None):
 		self.name = name
@@ -545,7 +567,17 @@ class Client():
 		:return
 		"""
 		name_malicious_client = ['Client{:03d}'.format(num) for num in self.option['attacker']]
-		if self.name in name_malicious_client and self.option['atk_method'] != 'none':
+		is_malicious = self.name in name_malicious_client and self.option['atk_method'] != 'none'
+		if os.environ.get('ATK_DEBUG') and self.name in name_malicious_client:
+			# One line per attacker client per round: did the malicious branch fire?
+			print("[ATK] client={} round={} atk={} enter_malicious={}".format(
+				self.name, round_num, self.option['atk_method'], is_malicious), flush=True)
+		if is_malicious:
+			if self.option['atk_method'] == 'psmu':
+				# PSMU (Yuan2023) model-poisoning routed through the UPLOADED model
+				# (cp["model"], which is what CFRU aggregates). Data-level injection is
+				# diluted away by full-model FedAvg; this hits the global model / ER path.
+				return self._psmu_attack(model, server_model, round_num)
 			model.train()
 			print(self.datavol)
 			neg_items_this_round = set()
@@ -556,6 +588,8 @@ class Client():
 			for iter in range(self.epochs):
 				if self.option['atk_method'] == 'fedFlipGrads':
 					neg_items_this_round.update(data_loader.dataset.ng_sample_original())
+				if self.option['atk_method'] == 'targetPromo':
+					neg_items_this_round.update(data_loader.dataset.ng_sample_target(self.option['target_item'], self.malicious_users))
 				# neg_items_this_round.update(data_loader.dataset.ng_sample_fedatk(self.model, topK = 1000, malicious_users = self.malicious_users))
 				for batch_id, batch_data in enumerate(data_loader):
 					model.zero_grad()
@@ -570,6 +604,9 @@ class Client():
 				# import pdb; pdb.set_trace()
 				update_client = model - server_model
 				self.model = server_model - update_client
+			if self.option['atk_method'] == 'targetPromo':
+				# keep the promoted target-item embedding through importance sparsification
+				return self.process_grad(server_model, self.neg_items[-1], force_keep=[self.option['target_item']])
 			return self.process_grad(server_model, self.neg_items[-1])
 		else:
 			# model.train()
@@ -588,7 +625,7 @@ class Client():
 			self.neg_items.append(list(neg_items_this_round))
 			return model
 
-	def process_grad(self, server_model, negative_items):
+	def process_grad(self, server_model, negative_items, force_keep=None):
 		all_selected_items = list(set(self.positive_items + negative_items))
 		M_v = (self.model - server_model).to('cpu')
 		for param in M_v.parameters(): param.requires_grad = False
@@ -598,14 +635,118 @@ class Client():
 		norms_item = torch.norm(M_v_user, dim=1)
 		topk_indices = torch.topk(norms_item, int(self.prop_saving * M_v_user.shape[0]))[1]
 		topk_item_ids = torch.tensor(all_selected_items)[topk_indices]
+		# FIX (targetPromo): force-keep the injected target-item embedding row.
+		# The target is a cold item, so it is absent from self.positive_items AND
+		# from the sampled negatives -> without this it lands in not_topk_items and
+		# M_v.embed_item.weight[target] is zeroed, silently discarding the entire
+		# attack payload before upload (M_poison's target stays cold => ER_poison=0).
+		if force_keep:
+			_keep = torch.tensor([int(t) for t in force_keep if t is not None and int(t) >= 0],
+							 dtype=topk_item_ids.dtype)
+			topk_item_ids = torch.unique(torch.cat([topk_item_ids, _keep]))
 		# get topk selected items
 		# all param not in topk -> 0
 		not_topk_items = ~torch.isin(torch.arange(M_v.embed_item.weight.shape[0]), topk_item_ids)
 		M_v.embed_item.weight[not_topk_items, :] = 0
+		if os.environ.get('ATK_DEBUG') and force_keep:
+			_t = [int(t) for t in force_keep if t is not None and int(t) >= 0]
+			if _t:
+				_n = float(torch.norm(M_v.embed_item.weight[_t]))
+				print('[ATK] process_grad uploaded target-row |delta|={:.5f} force_keep={} -> {}'.format(
+					_n, _t, 'PRESERVED' if _n > 0 else 'ZEROED'), flush=True)
 		# require grad = True
 		for param in M_v.parameters(): param.requires_grad = True
 		# save updates
 		return server_model + M_v.to(fmodule.device)
+
+	def _psmu_attack(self, model, server_model, round_num):
+		"""PSMU (Yuan2023) synthetic-user model-poisoning, routed through the quantity
+		CFRU actually aggregates (cp["model"] == self.model). Full-model FedAvg dilutes
+		data-level target injection, so instead we write a crafted target-item embedding
+		straight into the uploaded model -> it reaches the global model and the ER metric.
+		force_keep in process_grad then keeps the SAME target row in the stored update, so
+		the unlearn term stays consistent with what was aggregated."""
+		model.eval()  # deterministic scoring (Dropout off) while crafting
+		shift = self._psmu_craft_target(model, int(self.option['target_item']))
+		self.neg_items.append([])  # PSMU is pure model poisoning: no sampled negatives
+		if os.environ.get('ATK_DEBUG'):
+			print("[ATK] psmu client={} round={} target={} |target_shift|={:.4f}".format(
+				self.name, round_num, self.option['target_item'], shift), flush=True)
+		return self.process_grad(server_model, self.neg_items[-1],
+								 force_keep=[int(self.option['target_item'])])
+
+	def _psmu_craft_target(self, model, target_item):
+		"""Craft a promoted target-item embedding and write it into model.embed_item.
+		Faithful to PSMU's mechanism: (1) learn synthetic user embeddings that 'like' a
+		random item cluster (BCE), (2) build a competition set = nearest items to the
+		target, (3) descend the target-item embedding on an exposure objective so the
+		target outranks the competition for those synthetic users. Only the target row is
+		poisoned. Returns the L2 norm of the applied shift.
+
+		[CHECK] The exposure objective uses a BPR form (-logsigmoid(pos-neg)) for stable
+		gradients; the reference impl (anchor_psmu/attack.py) uses sigmoid(sum(neg-pos)).
+		Linear-layer poisoning from the reference is omitted. psmu_scale amplifies the
+		uploaded shift against FedAvg dilution and MUST be tuned to reach the ER gate.
+		Author-implemented attack on the CFRU substrate (disclose as such in the paper)."""
+		if not (hasattr(model, 'MLP_layers') and hasattr(model, 'predict_layer')):
+			raise NotImplementedError('PSMU craft supports the NeuMF-MLP (NCF) model only')
+		opt = self.option
+		s          = int(opt.get('psmu_s', 8))
+		user_steps = int(opt.get('psmu_user_steps', 30))
+		item_steps = int(opt.get('psmu_item_steps', 20))
+		lr         = float(opt.get('psmu_lr', 0.1))
+		comp_k     = int(opt.get('psmu_comp_k', 40))
+		std        = float(opt.get('psmu_std', 0.1))
+		scale      = float(opt.get('psmu_scale', 5.0))
+
+		device = model.embed_item.weight.device
+		num_item, dim = model.embed_item.weight.shape
+		MLP, PRED = model.MLP_layers, model.predict_layer
+		saved_rg = [p.requires_grad for p in model.parameters()]
+		for p in model.parameters(): p.requires_grad_(False)
+
+		item_w = model.embed_item.weight.data
+		server_target = item_w[target_item].clone()
+
+		def score(u_emb, item_embs):
+			# u_emb: (dim,), item_embs: (N, dim) -> logits (N,)
+			u = u_emb.unsqueeze(0).expand(item_embs.shape[0], -1)
+			return PRED(MLP(torch.cat([u, item_embs], dim=-1))).view(-1)
+
+		# competition set: items nearest to the target in embedding space (detached)
+		with torch.no_grad():
+			dist = torch.norm(item_w - server_target.unsqueeze(0), dim=1)
+			dist[target_item] = float('inf')
+			comp_idx = torch.topk(dist, k=min(comp_k, num_item - 1), largest=False).indices
+			comp_embs = item_w[comp_idx].clone()
+
+		target_emb = server_target.clone().requires_grad_(True)
+		for _ in range(s):
+			# (1) synthetic user that 'likes' a random cluster of items
+			cluster = torch.randint(0, num_item, (comp_k,), device=device)
+			neg_idx = torch.randint(0, num_item, (comp_k * 4,), device=device)
+			pos_embs, neg_embs = item_w[cluster].clone(), item_w[neg_idx].clone()
+			labels = torch.cat([torch.ones(pos_embs.shape[0], device=device),
+								torch.zeros(neg_embs.shape[0], device=device)])
+			u = (torch.randn(dim, device=device) * std).requires_grad_(True)
+			for _ in range(user_steps):
+				logits = score(u, torch.cat([pos_embs, neg_embs], dim=0))
+				loss_u = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
+				gu, = torch.autograd.grad(loss_u, u)
+				u = (u - lr * gu).detach().requires_grad_(True)
+			u = u.detach()
+			# (2) promote the target above the competition set for this synthetic user
+			for _ in range(item_steps):
+				pos = score(u, target_emb.unsqueeze(0))
+				neg = score(u, comp_embs)
+				loss = -torch.nn.functional.logsigmoid(pos - neg).mean()
+				gt, = torch.autograd.grad(loss, target_emb)
+				target_emb = (target_emb - lr * gt).detach().requires_grad_(True)
+
+		new_target = server_target + scale * (target_emb.detach() - server_target)
+		model.embed_item.weight.data[target_item] = new_target.to(item_w.dtype)
+		for p, rg in zip(model.parameters(), saved_rg): p.requires_grad_(rg)
+		return float(torch.norm(new_target - server_target))
 
 	def test(self, test_data, server_model = None):
 		"""

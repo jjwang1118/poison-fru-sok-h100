@@ -12,7 +12,7 @@ import time
 sample_list=['uniform', 'md', 'active']
 agg_list=['uniform', 'weighted_scale', 'weighted_com', 'none']
 optimizer_list=['SGD', 'Adam']
-attack_methods = ['fedAttack', 'fedFlipGrads', 'none']
+attack_methods = ['fedAttack', 'fedFlipGrads', 'targetPromo', 'psmu', 'none']
 
 def read_option():
     parser = argparse.ArgumentParser()
@@ -21,6 +21,15 @@ def read_option():
     parser.add_argument('--algorithm', help='name of algorithm;', type=str, default='fedavg')
     parser.add_argument('--model', help='name of model;', type=str, default='cnn')
     parser.add_argument('--atk_method', help='method for poisoning global model', type=str, choices=attack_methods, default='none')
+    parser.add_argument('--target_item', help='target item id for the targetPromo attack (-1 = auto-pick the least-popular item)', type=int, default=-1)
+    # PSMU (Yuan2023) synthetic-user model-poisoning hyper-parameters (atk_method=psmu)
+    parser.add_argument('--psmu_scale', type=float, default=5.0, help='amplification of the crafted target-embedding shift vs FedAvg dilution [tune to hit ER gate]')
+    parser.add_argument('--psmu_s', type=int, default=8, help='number of synthetic users per malicious client per round')
+    parser.add_argument('--psmu_user_steps', type=int, default=30, help='SGD steps to fit each synthetic user embedding')
+    parser.add_argument('--psmu_item_steps', type=int, default=20, help='SGD steps to craft the target-item embedding per synthetic user')
+    parser.add_argument('--psmu_lr', type=float, default=0.1, help='learning rate for the synthetic-user / target-item craft')
+    parser.add_argument('--psmu_comp_k', type=int, default=40, help='competition-set size (nearest items to the target)')
+    parser.add_argument('--psmu_std', type=float, default=0.1, help='init std of synthetic user embeddings')
 
     # methods of server side for sampling and aggregating
     parser.add_argument('--sample', help='methods for sampling clients', type=str, choices=sample_list, default='uniform')
@@ -132,6 +141,26 @@ def initialize(option):
         malicious_users = malicious_users + users_per_client[cid]
     option['malicious_users'] = malicious_users
     
+    # TARGETED attack: pick a deterministic cold (least-popular) target item if none given,
+    # so the same item is used across clean/poison/retain runs and M_clean's exposure is ~0.
+    if option.get('target_item', -1) is None or option['target_item'] < 0:
+        from collections import Counter
+        cnt = Counter()
+        try:
+            for ds in client_train_datas:
+                for x in ds.features:
+                    cnt[int(x[1])] += 1
+            item_num = int(data_conf['item_num'])
+            option['target_item'] = int(min((it for it in range(item_num) if cnt.get(it, 0) >= 1),
+                                            key=lambda it: (cnt[it], it)))
+        except Exception:
+            option['target_item'] = 1
+    print('target_item =', option['target_item'], '| atk_method =', option['atk_method'])
+    if os.environ.get('ATK_DEBUG'):
+        print('[ATK] setup mode={} forget_frac={} forget={} attacker={} n_malicious_users={}'.format(
+            option['mode'], option['forget_frac'], option['forget'], option['attacker'],
+            len(option['malicious_users'])), flush=True)
+
     # set config in fmodule
     utils.fmodule.data_conf = data_conf
     utils.fmodule.option = option
