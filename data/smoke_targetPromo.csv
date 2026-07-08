@@ -1,0 +1,2 @@
+anchor,method,seed,forget_frac,attack_saturated,target_item,hr_clean,hr_poison,hr_retain,hr_unlearned,ndcg_clean,ndcg_poison,ndcg_retain,ndcg_unlearned,er_clean,er_poison,er_retain,er_unlearned
+CFRU-psmu-ML1M-NCF,CFRU,0,1.0,0,2248,0.7854735883424411,0.7667455980570731,0.7611262902246507,0.7667455980570731,0.3928278414152046,0.3772514492723871,0.3645202008607761,0.3772543110275589,0.0,0.0,0.0,0.0

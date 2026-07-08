@@ -1,4 +1,3 @@
-cat > smoke.sh << 'EOF'
 #!/bin/bash
 #SBATCH --account=mst115223
 #SBATCH --job-name=poison_smoke
@@ -6,7 +5,7 @@ cat > smoke.sh << 'EOF'
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=smoke-%j.out
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=114423002@cc.ncu.edu.tw
@@ -23,4 +22,3 @@ ATK_DEBUG=1 SEEDS=0 FORGET_FRACS=1.0 NUM_ROUNDS=40 PSMU_SCALE=5 \
 
 echo "=== smoke result (look for ER poison >> ER clean) ==="
 cat "$OUTCSV"
-EOF
